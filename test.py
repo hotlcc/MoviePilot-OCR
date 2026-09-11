@@ -1,3 +1,4 @@
+import asyncio
 import io
 import unittest
 from unittest.mock import patch
@@ -133,6 +134,38 @@ class CaptchaRecognitionTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ImageTooLargeError, "4096 x 4096"):
             load_grayscale_image(buffer.getvalue())
+
+    def test_raw_image_endpoint_passes_binary_body_to_recognizer(self):
+        """二进制接口必须把原始请求体直接交给识别器。"""
+
+        class RawRequest:
+            """提供验证码二进制接口所需的最小异步请求对象。"""
+
+            async def body(self):
+                """返回预设原始图片字节。"""
+                return b"raw-image"
+
+        with patch("main.recognize_captcha", return_value="77D2A8") as recognize:
+            response = asyncio.run(main.captcha_image(RawRequest()))
+
+        self.assertEqual(response.result, "77D2A8")
+        recognize.assert_called_once_with(b"raw-image")
+
+    def test_raw_image_endpoint_rejects_empty_body(self):
+        """二进制接口必须拒绝空请求体。"""
+
+        class EmptyRequest:
+            """提供空请求体。"""
+
+            async def body(self):
+                """返回空字节。"""
+                return b""
+
+        with self.assertRaises(main.HTTPException) as context:
+            asyncio.run(main.captcha_image(EmptyRequest()))
+
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertEqual(context.exception.detail, "image body must not be empty")
 
 
 if __name__ == "__main__":

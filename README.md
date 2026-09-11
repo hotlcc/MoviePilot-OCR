@@ -84,6 +84,18 @@ curl --request POST http://127.0.0.1:9899/captcha/base64 \
   --data "{\"base64_img\":\"${IMAGE_B64}\"}"
 ```
 
+### 直接识别图片数据
+
+`POST /captcha/image` 直接接收图片二进制请求体，适合浏览器或 Agent 已经取得图片字节的场景，不需要调用方先转换为 Base64。
+
+```bash
+curl --request POST http://127.0.0.1:9899/captcha/image \
+  --header 'Content-Type: image/png' \
+  --data-binary @captcha.png
+```
+
+该接口与 Base64 接口使用相同的 5 MiB、4096 x 4096 图片限制和响应格式。
+
 FastAPI 交互文档位于 `http://127.0.0.1:9899/docs`。
 
 ## 源码运行

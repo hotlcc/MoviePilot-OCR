@@ -8,7 +8,7 @@ import cv2
 import ddddocr
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel
 
@@ -64,19 +64,42 @@ def captcha_base64(data: OCRRequest):
 
     try:
         image_bytes = decode_base64_image(data.base64_img)
-        result = recognize_captcha(image_bytes)
-    except ImageTooLargeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=str(exc),
-        ) from exc
-    except InvalidImageError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc
+        return OCRResponse(result=_recognize_image_bytes(image_bytes))
+    except (ImageTooLargeError, InvalidImageError) as exc:
+        raise _image_http_error(exc) from exc
 
-    return OCRResponse(result=result)
+
+@app.post("/captcha/image", response_model=OCRResponse)
+async def captcha_image(request: Request):
+    """直接接收原始图片字节并识别验证码，避免调用方先转 Base64。"""
+
+    image_bytes = await request.body()
+    try:
+        return OCRResponse(result=_recognize_image_bytes(image_bytes))
+    except (ImageTooLargeError, InvalidImageError) as exc:
+        raise _image_http_error(exc) from exc
+
+
+def _recognize_image_bytes(image_bytes: bytes) -> str:
+    """校验原始图片并调用 OCR，统一 Base64 与二进制入口的业务路径。"""
+    if not image_bytes:
+        raise InvalidImageError("image body must not be empty")
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise ImageTooLargeError("image exceeds the 5 MiB limit")
+    return recognize_captcha(image_bytes)
+
+
+def _image_http_error(error: ValueError) -> HTTPException:
+    """把图片输入异常转换为稳定的 HTTP 状态码。"""
+    if isinstance(error, ImageTooLargeError):
+        return HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(error),
+        )
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=str(error),
+    )
 
 
 def decode_base64_image(value: str) -> bytes:
